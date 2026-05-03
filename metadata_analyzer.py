@@ -1,4 +1,5 @@
 import re
+import docx
 import mimetypes
 from PIL import Image
 from abc import ABC, abstractmethod
@@ -62,7 +63,15 @@ class PdfMetadataExtractor(MetadataExtractor):
 
 class DocxMetadataExtractor(MetadataExtractor):
     def extract(self, filepath):
-        return super().extract(filepath)
+        doc = docx.Document(filepath)
+        prop = doc.core_properties
+        attributes = [
+            'author', 'category', 'comments', 'content_status',
+            'created', 'identifier', 'keywords', 'last_modified_by',
+            'language', 'modified', 'subject', 'title', 'version'
+        ]
+        metadata = {attr: getattr(prop, attr, None) for attr in attributes}
+        return metadata
 
 class MetadataExtractorFactory:
     @staticmethod
@@ -73,6 +82,9 @@ class MetadataExtractorFactory:
                 return ImageMetadataExtractor()
             if mime_type == 'application/pdf':
                 return PdfMetadataExtractor()
+            if mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                return DocxMetadataExtractor()
+        raise ValueError('Unsupported file type')
 
 def extract_metadata(filepath):
     extractor = MetadataExtractorFactory.get_extractor(filepath)
