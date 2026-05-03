@@ -1,6 +1,10 @@
-from abc import ABC, abstractmethod
-from PIL import Image
+import re
 import mimetypes
+from PIL import Image
+from abc import ABC, abstractmethod
+from pdfminer.high_level import extract_text
+from pdfminer.pdfparser import PDFParser
+from pdfminer.pdfdocument import PDFDocument
 
 class MetadataExtractor(ABC):
     @abstractmethod
@@ -26,6 +30,39 @@ class ImageMetadataExtractor(MetadataExtractor):
             else:
                 return {'Error': 'unsupported image format'}
 
+class PdfMetadataExtractor(MetadataExtractor):
+    def extract(self, filepath):
+        metadata = {}
+        with open(filepath, 'rb') as f:
+            parser = PDFParser(f)
+            doc = PDFDocument(parser)
+            if doc.info:
+                for info in doc.info:
+                    for key, value in info.items():
+                        # Verificamos si el valor de la clave son bytes
+                        if isinstance(value, bytes):
+                            try:
+                                # Intentar decodificarlo en UTF-16BE
+                                decode_value = value.decode('utf-16be')
+                            except UnicodeDecodeError:
+                                # Intentar decodificarlo en UTF-8
+                                decode_value = value.decode('utf-8', errors='ignore')
+                        else:
+                            decode_value = value
+
+                        metadata[key] = decode_value
+            # procesamos el texto del pdf para obtener otros datos de interes
+            text = extract_text(filepath)
+            metadata["Emails"] = self._extract_emails(text)
+        return metadata
+
+    def _extract_emails(self, text):
+        email_regex = r'[a-zA-Z0-0._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+        return re.findall(email_regex, text)
+
+class DocxMetadataExtractor(MetadataExtractor):
+    def extract(self, filepath):
+        return super().extract(filepath)
 
 class MetadataExtractorFactory:
     @staticmethod
@@ -34,6 +71,8 @@ class MetadataExtractorFactory:
         if mime_type:
             if mime_type.startswith('image'):
                 return ImageMetadataExtractor()
+            if mime_type == 'application/pdf':
+                return PdfMetadataExtractor()
 
 def extract_metadata(filepath):
     extractor = MetadataExtractorFactory.get_extractor(filepath)
